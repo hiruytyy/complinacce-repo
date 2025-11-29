@@ -25,17 +25,18 @@ Provide a concise, actionable response."""
 
     try:
         response = bedrock.invoke_model(
-            modelId='anthropic.claude-3-sonnet-20240229-v1:0',
+            modelId='amazon.nova-pro-v1:0',
             body=json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 1500,
-                "temperature": 0.3
+                "messages": [{"role": "user", "content": [{"text": prompt}]}],
+                "inferenceConfig": {
+                    "max_new_tokens": 1500,
+                    "temperature": 0.3
+                }
             })
         )
         
         result = json.loads(response['body'].read())
-        return result['content'][0]['text']
+        return result['output']['message']['content'][0]['text']
     except Exception as e:
         print(f"Warning: AI analysis failed: {e}")
         return f"Check failed: {failure.get('check_name', 'Unknown')}"
