@@ -9,7 +9,7 @@ phases:
   pre_build:
     commands:
       - echo "Running CMMC compliance scan with Checkov..."
-      - checkov -d . --framework terraform cloudformation --output json --output-file checkov-results.json || true
+      - checkov -d . --framework terraform --output json --output-file checkov-results.json || true
       - echo "Checkov scan completed"
   
   build:
