@@ -36,13 +36,18 @@ VIOLATION DETAILS:
 CURRENT CODE:
 {chr(10).join(code_block) if code_block else 'N/A'}
 
-PROVIDE:
-1. Clear explanation of why this violates CMMC
-2. Specific CMMC practice(s) violated (with practice IDs)
-3. Complete, working Terraform code to fix this violation
-4. Any additional security recommendations
+PROVIDE YOUR RESPONSE IN THIS EXACT FORMAT:
 
-Focus on providing actionable, copy-paste ready Terraform code."""
+## 1. EXPLANATION
+[Explain why this violates CMMC and which specific CMMC practice(s) are violated with practice IDs]
+
+## 2. FAILED RESOURCES
+[List the specific resources that failed this check]
+
+## 3. TERRAFORM FIX CODE
+[Provide complete, working, copy-paste ready Terraform code to resolve this violation]
+
+Focus on actionable fixes with production-ready Terraform code."""
 
     try:
         response = bedrock.invoke_model(
