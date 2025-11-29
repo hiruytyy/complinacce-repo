@@ -5,8 +5,12 @@ import boto3
 import os
 
 def analyze_with_ai(failure):
-    """Send violation to Bedrock Nova Pro for AI analysis"""
+    """Send violation to Bedrock for AI analysis"""
     bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
+    
+    model_id = os.environ.get('BEDROCK_MODEL_ID', 'amazon.nova-pro-v1:0')
+    max_tokens = int(os.environ.get('BEDROCK_MAX_TOKENS', '1500'))
+    temperature = float(os.environ.get('BEDROCK_TEMPERATURE', '0.3'))
     
     prompt = f"""You are a CMMC compliance expert. Analyze this Terraform violation and provide:
 1. Clear explanation of why this violates CMMC
@@ -23,12 +27,12 @@ Provide a concise, actionable response with the fix code."""
 
     try:
         response = bedrock.invoke_model(
-            modelId='amazon.nova-pro-v1:0',
+            modelId=model_id,
             body=json.dumps({
                 "messages": [{"role": "user", "content": [{"text": prompt}]}],
                 "inferenceConfig": {
-                    "max_new_tokens": 1500,
-                    "temperature": 0.3
+                    "max_new_tokens": max_tokens,
+                    "temperature": temperature
                 }
             })
         )
@@ -43,8 +47,12 @@ def send_notification(summary, details):
     """Send SNS notification"""
     try:
         sns = boto3.client('sns', region_name='us-east-1')
-        topic_arn = "arn:aws:sns:us-east-1:645275603244:cmmc-compliance-alerts"
+        topic_arn = os.environ.get('SNS_TOPIC_ARN')
         
+        if not topic_arn:
+            print("Warning: SNS_TOPIC_ARN not set, skipping notification")
+            return
+            
         sns.publish(
             TopicArn=topic_arn,
             Subject=summary[:100],

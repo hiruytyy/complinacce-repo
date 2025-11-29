@@ -49,6 +49,26 @@ resource "aws_codebuild_project" "cmmc_scanner" {
       name  = "ARTIFACT_BUCKET"
       value = aws_s3_bucket.pipeline_artifacts.id
     }
+
+    environment_variable {
+      name  = "SNS_TOPIC_ARN"
+      value = aws_sns_topic.compliance_alerts.arn
+    }
+
+    environment_variable {
+      name  = "BEDROCK_MODEL_ID"
+      value = var.bedrock_model_id
+    }
+
+    environment_variable {
+      name  = "BEDROCK_MAX_TOKENS"
+      value = var.bedrock_max_tokens
+    }
+
+    environment_variable {
+      name  = "BEDROCK_TEMPERATURE"
+      value = var.bedrock_temperature
+    }
   }
 
   source {
@@ -161,7 +181,7 @@ resource "aws_iam_role_policy" "codebuild_policy" {
         Action = [
           "bedrock:InvokeModel"
         ]
-        Resource = "arn:aws:bedrock:*::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+        Resource = "arn:aws:bedrock:*::foundation-model/*"
       },
       {
         Effect = "Allow"
