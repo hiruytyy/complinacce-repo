@@ -12,18 +12,37 @@ def analyze_with_ai(failure):
     max_tokens = int(os.environ.get('BEDROCK_MAX_TOKENS', '1500'))
     temperature = float(os.environ.get('BEDROCK_TEMPERATURE', '0.3'))
     
-    prompt = f"""You are a CMMC compliance expert. Analyze this Terraform violation and provide:
+    # Extract all relevant Checkov fields
+    check_name = failure.get('check_name', 'Unknown')
+    resource = failure.get('resource', 'Unknown')
+    file_path = failure.get('file_path', 'Unknown')
+    description = failure.get('description', 'N/A')
+    guideline = failure.get('guideline', 'N/A')
+    code_block = failure.get('code_block', [])
+    benchmarks = failure.get('benchmarks', {})
+    severity = failure.get('severity', 'UNKNOWN')
+    
+    prompt = f"""Analyze this Terraform security violation and provide CMMC-compliant fixes.
+
+VIOLATION DETAILS:
+- Check: {check_name}
+- Description: {description}
+- Resource: {resource}
+- File: {file_path}
+- Severity: {severity}
+- Guideline: {guideline}
+- Benchmarks: {benchmarks}
+
+CURRENT CODE:
+{chr(10).join(code_block) if code_block else 'N/A'}
+
+PROVIDE:
 1. Clear explanation of why this violates CMMC
-2. Which CMMC practice(s) it violates
-3. Exact Terraform code to fix it
-4. Severity level (CRITICAL/HIGH/MEDIUM/LOW)
+2. Specific CMMC practice(s) violated (with practice IDs)
+3. Complete, working Terraform code to fix this violation
+4. Any additional security recommendations
 
-Violation Details:
-- Check: {failure.get('check_name', 'Unknown')}
-- Resource: {failure.get('resource', 'Unknown')}
-- File: {failure.get('file_path', 'Unknown')}
-
-Provide a concise, actionable response with the fix code."""
+Focus on providing actionable, copy-paste ready Terraform code."""
 
     try:
         response = bedrock.invoke_model(
@@ -42,7 +61,7 @@ Provide a concise, actionable response with the fix code."""
         return result['output']['message']['content'][0]['text']
     except Exception as e:
         print(f"Warning: AI analysis failed: {e}")
-        return f"Check failed: {failure.get('check_name', 'Unknown')}"
+        return f"Check failed: {check_name}"
 
 def send_notification(summary, details):
     """Send SNS notification"""
