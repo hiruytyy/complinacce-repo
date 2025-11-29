@@ -14,8 +14,10 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "example" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm = "aws:kms"
+      kms_master_key_id = aws_kms_key.example.arn
     }
+    bucket_key_enabled = true
   }
 }
 
@@ -31,8 +33,32 @@ resource "aws_s3_bucket_public_access_block" "example" {
 resource "aws_s3_bucket_logging" "example" {
   bucket = aws_s3_bucket.example.id
 
-  target_bucket = aws_s3_bucket.example.id
+  target_bucket = aws_s3_bucket.logs.id
   target_prefix = "log/"
+}
+
+resource "aws_s3_bucket" "logs" {
+  bucket = "my-test-bucket-logs-${data.aws_caller_identity.current.account_id}"
+}
+
+resource "aws_s3_bucket_public_access_block" "logs" {
+  bucket = aws_s3_bucket.logs.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_kms_key" "example" {
+  description             = "KMS key for S3 bucket encryption"
+  deletion_window_in_days = 10
+  enable_key_rotation     = true
+}
+
+resource "aws_kms_alias" "example" {
+  name          = "alias/s3-bucket-key"
+  target_key_id = aws_kms_key.example.key_id
 }
 
 data "aws_caller_identity" "current" {}
