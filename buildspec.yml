@@ -1,0 +1,35 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - echo "Installing dependencies..."
+      - pip install checkov boto3
+  
+  pre_build:
+    commands:
+      - echo "Running CMMC compliance scan with Checkov..."
+      - checkov -d . --framework terraform cloudformation --output json --output-file checkov-results.json || true
+      - echo "Checkov scan completed"
+  
+  build:
+    commands:
+      - echo "Analyzing results with AI..."
+      - python ai-analyzer.py checkov-results.json
+      - |
+        if [ $? -ne 0 ]; then
+          echo "❌ CMMC compliance scan FAILED - Pipeline blocked"
+          exit 1
+        fi
+      - echo "✓ All CMMC checks passed - Deployment allowed"
+
+artifacts:
+  files:
+    - checkov-results.json
+    - compliance-report.txt
+  name: compliance-scan-results
+
+reports:
+  compliance:
+    files:
+      - 'checkov-results.json'
