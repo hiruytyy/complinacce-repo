@@ -9,7 +9,7 @@ phases:
   pre_build:
     commands:
       - echo "Running NIST 800-53 compliance scan with Prowler..."
-      - prowler aws --compliance nist_800_53_revision_5 --output-formats json --output-directory . || true
+      - prowler aws --compliance nist_800_53_revision_5_aws --output-formats json --output-directory . || true
       - echo "Prowler scan completed"
   
   build:
