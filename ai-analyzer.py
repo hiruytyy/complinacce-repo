@@ -22,6 +22,12 @@ def analyze_with_ai(failure):
     benchmarks = failure.get('benchmarks', {})
     severity = failure.get('severity', 'UNKNOWN')
     
+    # Format code block properly
+    if isinstance(code_block, list):
+        code_str = '\n'.join([str(line) if not isinstance(line, list) else str(line) for line in code_block])
+    else:
+        code_str = str(code_block)
+    
     prompt = f"""Analyze this Terraform security violation and provide CMMC-compliant fixes.
 
 VIOLATION DETAILS:
@@ -34,7 +40,7 @@ VIOLATION DETAILS:
 - Benchmarks: {benchmarks}
 
 CURRENT CODE:
-{chr(10).join(code_block) if code_block else 'N/A'}
+{code_str if code_str else 'N/A'}
 
 PROVIDE YOUR RESPONSE IN THIS EXACT FORMAT:
 
