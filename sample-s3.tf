@@ -37,6 +37,33 @@ resource "aws_s3_bucket_logging" "example" {
   target_prefix = "log/"
 }
 
+resource "aws_s3_bucket_lifecycle_configuration" "example" {
+  bucket = aws_s3_bucket.example.id
+
+  rule {
+    id     = "archive"
+    status = "Enabled"
+
+    transition {
+      days          = 90
+      storage_class = "GLACIER"
+    }
+  }
+}
+
+resource "aws_s3_bucket_notification" "example" {
+  bucket = aws_s3_bucket.example.id
+
+  topic {
+    topic_arn = aws_sns_topic.bucket_notifications.arn
+    events    = ["s3:ObjectCreated:*", "s3:ObjectRemoved:*"]
+  }
+}
+
+resource "aws_sns_topic" "bucket_notifications" {
+  name = "s3-bucket-notifications"
+}
+
 resource "aws_s3_bucket" "logs" {
   bucket = "my-test-bucket-logs-${data.aws_caller_identity.current.account_id}"
 }
@@ -54,6 +81,21 @@ resource "aws_kms_key" "example" {
   description             = "KMS key for S3 bucket encryption"
   deletion_window_in_days = 10
   enable_key_rotation     = true
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      }
+    ]
+  })
 }
 
 resource "aws_kms_alias" "example" {
