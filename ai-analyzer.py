@@ -87,7 +87,7 @@ def send_notification(summary, details):
         sns.publish(
             TopicArn=topic_arn,
             Subject=summary[:100],
-            Message=details[:1000]
+            Message=details[:262000]  # SNS max is 256KB
         )
         print(f"✓ Notification sent to SNS")
     except Exception as e:
@@ -168,9 +168,29 @@ All CMMC compliance requirements met.
     with open('compliance-report.txt', 'w') as f:
         f.write(report_content)
     
-    # Send notification
+    # Save full report to S3
+    try:
+        s3 = boto3.client('s3', region_name='us-east-1')
+        bucket = os.environ.get('ARTIFACT_BUCKET')
+        if bucket:
+            s3.put_object(
+                Bucket=bucket,
+                Key='compliance-reports/latest-report.txt',
+                Body=report_content.encode('utf-8'),
+                ContentType='text/plain'
+            )
+            print(f"✓ Full report saved to S3: s3://{bucket}/compliance-reports/latest-report.txt")
+    except Exception as e:
+        print(f"Warning: Failed to save report to S3: {e}")
+    
+    # Send notification with full content (SNS supports up to 256KB)
     summary = f"❌ CMMC: {len(failed_checks)} violation(s) - AI fixes provided"
-    send_notification(summary, report_content[:1000])
+    notification_message = f"""{report_content}
+
+---
+Full report also available in S3: s3://{os.environ.get('ARTIFACT_BUCKET', 'N/A')}/compliance-reports/latest-report.txt
+"""
+    send_notification(summary, notification_message[:262000])  # SNS limit is 256KB
     
     print(f"\n{'='*70}")
     print("PIPELINE STATUS: FAILED")
