@@ -4,6 +4,41 @@ import sys
 import boto3
 import os
 
+def analyze_with_ai(failure):
+    """Send violation to Bedrock Nova Pro for AI analysis"""
+    bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
+    
+    prompt = f"""You are a CMMC compliance expert. Analyze this Terraform violation and provide:
+1. Clear explanation of why this violates CMMC
+2. Which CMMC practice(s) it violates
+3. Exact Terraform code to fix it
+4. Severity level (CRITICAL/HIGH/MEDIUM/LOW)
+
+Violation Details:
+- Check: {failure.get('check_name', 'Unknown')}
+- Resource: {failure.get('resource', 'Unknown')}
+- File: {failure.get('file_path', 'Unknown')}
+
+Provide a concise, actionable response with the fix code."""
+
+    try:
+        response = bedrock.invoke_model(
+            modelId='amazon.nova-pro-v1:0',
+            body=json.dumps({
+                "messages": [{"role": "user", "content": [{"text": prompt}]}],
+                "inferenceConfig": {
+                    "max_new_tokens": 1500,
+                    "temperature": 0.3
+                }
+            })
+        )
+        
+        result = json.loads(response['body'].read())
+        return result['output']['message']['content'][0]['text']
+    except Exception as e:
+        print(f"Warning: AI analysis failed: {e}")
+        return f"Check failed: {failure.get('check_name', 'Unknown')}"
+
 def send_notification(summary, details):
     """Send SNS notification"""
     try:
@@ -50,7 +85,6 @@ def main():
         print("✓ All CMMC compliance checks passed!")
         print("Deployment is allowed to proceed.\n")
         
-        # Send success notification
         summary = f"✅ CMMC Compliance: All {total_checks} checks passed!"
         details = f"""CMMC COMPLIANCE SCAN - SUCCESS
 
@@ -65,38 +99,45 @@ All CMMC compliance requirements met.
         sys.exit(0)
     
     print(f"❌ {len(failed_checks)} CMMC violation(s) detected\n")
+    print("Analyzing violations with Nova Pro AI...\n")
     
     report_lines = []
+    report_lines.append("CMMC COMPLIANCE VIOLATIONS REPORT")
+    report_lines.append("=" * 70)
+    report_lines.append(f"Total Violations: {len(failed_checks)}\n")
+    
     for idx, failure in enumerate(failed_checks, 1):
-        print(f"Violation {idx}:")
+        print(f"Violation {idx}/{len(failed_checks)}:")
         print(f"  Resource: {failure.get('resource', 'Unknown')}")
         print(f"  Check: {failure.get('check_name', 'Unknown')}")
         print(f"  File: {failure.get('file_path', 'Unknown')}")
-        print(f"  Guideline: {failure.get('guideline', 'N/A')}\n")
         
-        report_lines.append(f"Violation {idx}: {failure.get('check_name', 'Unknown')}")
-        report_lines.append(f"  Resource: {failure.get('resource', 'Unknown')}")
-        report_lines.append(f"  File: {failure.get('file_path', 'Unknown')}\n")
+        # Get AI analysis with fix suggestions
+        ai_analysis = analyze_with_ai(failure)
+        
+        print(f"\n{ai_analysis}\n")
+        print("-" * 70 + "\n")
+        
+        report_lines.append(f"\nVIOLATION {idx}:")
+        report_lines.append(f"Resource: {failure.get('resource', 'Unknown')}")
+        report_lines.append(f"File: {failure.get('file_path', 'Unknown')}")
+        report_lines.append(f"\n{ai_analysis}")
+        report_lines.append("-" * 70)
+    
+    # Save report
+    report_content = "\n".join(report_lines)
+    with open('compliance-report.txt', 'w') as f:
+        f.write(report_content)
     
     # Send notification
-    summary = f"❌ CMMC Compliance: {len(failed_checks)} violation(s) detected"
-    details = f"""CMMC COMPLIANCE SCAN - FAILED
-
-Total Checks: {total_checks}
-Passed: {len(passed_checks)}
-Failed: {len(failed_checks)}
-
-VIOLATIONS:
-{chr(10).join(report_lines[:500])}
-
-Status: DEPLOYMENT BLOCKED
-"""
-    send_notification(summary, details)
+    summary = f"❌ CMMC: {len(failed_checks)} violation(s) - AI fixes provided"
+    send_notification(summary, report_content[:1000])
     
     print(f"\n{'='*70}")
     print("PIPELINE STATUS: FAILED")
     print(f"{'='*70}")
-    print(f"\n❌ Deployment BLOCKED due to {len(failed_checks)} CMMC violation(s)\n")
+    print(f"\n❌ Deployment BLOCKED due to {len(failed_checks)} CMMC violation(s)")
+    print("Check email for AI-powered fix suggestions.\n")
     
     sys.exit(1)
 
