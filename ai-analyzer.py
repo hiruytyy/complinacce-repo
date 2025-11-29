@@ -29,6 +29,7 @@ Provide a concise, actionable response with the fix code."""
         response = bedrock.invoke_model(
             modelId=model_id,
             body=json.dumps({
+                "system": [{"text": "You are a CMMC (Cybersecurity Maturity Model Certification) compliance expert specializing in infrastructure security and Terraform. Your role is to analyze security violations, explain CMMC requirements, and provide actionable Terraform code fixes."}],
                 "messages": [{"role": "user", "content": [{"text": prompt}]}],
                 "inferenceConfig": {
                     "max_new_tokens": max_tokens,
