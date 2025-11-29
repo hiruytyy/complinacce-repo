@@ -21,13 +21,17 @@ def send_notification(summary, details):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python ai-analyzer.py <checkov-results.json>")
+        print("Usage: python ai-analyzer.py <checkov-output.json>")
         sys.exit(1)
     
     results_file = sys.argv[1]
     
-    with open(results_file, 'r') as f:
-        checkov_results = json.load(f)
+    try:
+        with open(results_file, 'r') as f:
+            checkov_results = json.load(f)
+    except Exception as e:
+        print(f"Error reading results: {e}")
+        sys.exit(1)
     
     failed_checks = checkov_results.get('results', {}).get('failed_checks', [])
     passed_checks = checkov_results.get('results', {}).get('passed_checks', [])

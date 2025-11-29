@@ -9,13 +9,13 @@ phases:
   pre_build:
     commands:
       - echo "Running CMMC compliance scan with Checkov..."
-      - checkov -d . --framework terraform --output json --output-file checkov-results.json || true
+      - checkov -d . --framework terraform --output json > checkov-output.json || true
       - echo "Checkov scan completed"
   
   build:
     commands:
       - echo "Analyzing results with AI..."
-      - python ai-analyzer.py checkov-results.json
+      - python ai-analyzer.py checkov-output.json
       - |
         if [ $? -ne 0 ]; then
           echo "❌ CMMC compliance scan FAILED - Pipeline blocked"
@@ -25,11 +25,6 @@ phases:
 
 artifacts:
   files:
-    - checkov-results.json
+    - checkov-output.json
     - compliance-report.txt
   name: compliance-scan-results
-
-reports:
-  compliance:
-    files:
-      - 'checkov-results.json'
