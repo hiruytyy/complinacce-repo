@@ -4,27 +4,27 @@ phases:
   install:
     commands:
       - echo "Installing dependencies..."
-      - pip install checkov boto3
+      - pip install prowler boto3
   
   pre_build:
     commands:
-      - echo "Running CMMC compliance scan with Checkov..."
-      - checkov -f sample-s3.tf --framework terraform --output json > checkov-output.json || true
-      - echo "Checkov scan completed"
+      - echo "Running NIST 800-53 compliance scan with Prowler..."
+      - prowler aws --compliance nist_800_53_revision_5 --output-formats json --output-directory . || true
+      - echo "Prowler scan completed"
   
   build:
     commands:
       - echo "Analyzing results with AI..."
-      - python ai-analyzer.py checkov-output.json
+      - python ai-analyzer.py prowler-output*.json
       - |
         if [ $? -ne 0 ]; then
-          echo "❌ CMMC compliance scan FAILED - Pipeline blocked"
+          echo "❌ NIST 800-53 compliance scan FAILED - Pipeline blocked"
           exit 1
         fi
-      - echo "✓ All CMMC checks passed - Deployment allowed"
+      - echo "✓ All NIST 800-53 checks passed - Deployment allowed"
 
 artifacts:
   files:
-    - checkov-output.json
+    - prowler-output*.json
     - compliance-report.txt
   name: compliance-scan-results

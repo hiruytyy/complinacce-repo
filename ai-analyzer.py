@@ -12,43 +12,37 @@ def analyze_with_ai(failure):
     max_tokens = int(os.environ.get('BEDROCK_MAX_TOKENS', '1500'))
     temperature = float(os.environ.get('BEDROCK_TEMPERATURE', '0.3'))
     
-    # Extract all relevant Checkov fields
-    check_name = failure.get('check_name', 'Unknown')
-    resource = failure.get('resource', 'Unknown')
-    file_path = failure.get('file_path', 'Unknown')
-    description = failure.get('description', 'N/A')
-    guideline = failure.get('guideline', 'N/A')
-    code_block = failure.get('code_block', [])
-    benchmarks = failure.get('benchmarks', {})
-    severity = failure.get('severity', 'UNKNOWN')
+    # Extract Prowler fields
+    check_id = failure.get('CheckID', 'Unknown')
+    check_title = failure.get('CheckTitle', 'Unknown')
+    resource = failure.get('ResourceId', 'Unknown')
+    region = failure.get('Region', 'N/A')
+    severity = failure.get('Severity', 'UNKNOWN')
+    description = failure.get('Description', 'N/A')
+    risk = failure.get('Risk', 'N/A')
+    remediation = failure.get('Remediation', {})
+    compliance = failure.get('Compliance', {})
     
-    # Format code block properly
-    if isinstance(code_block, list):
-        code_str = '\n'.join([str(line) if not isinstance(line, list) else str(line) for line in code_block])
-    else:
-        code_str = str(code_block)
-    
-    prompt = f"""Analyze this Terraform security violation and provide CMMC-compliant fixes.
+    prompt = f"""Analyze this AWS security violation and provide NIST 800-53 compliant fixes.
 
 VIOLATION DETAILS:
-- Check: {check_name}
+- Check ID: {check_id}
+- Check: {check_title}
 - Description: {description}
 - Resource: {resource}
-- File: {file_path}
+- Region: {region}
 - Severity: {severity}
-- Guideline: {guideline}
-- Benchmarks: {benchmarks}
-
-CURRENT CODE:
-{code_str if code_str else 'N/A'}
+- Risk: {risk}
+- NIST 800-53 Controls: {compliance.get('NIST-800-53', 'N/A')}
+- Remediation: {remediation.get('Recommendation', {}).get('Text', 'N/A')}
 
 PROVIDE YOUR RESPONSE IN THIS EXACT FORMAT:
 
 ## 1. EXPLANATION
-[Explain why this violates CMMC and which specific CMMC practice(s) are violated with practice IDs]
+[Explain why this violates NIST 800-53 and which specific controls are violated]
 
 ## 2. FAILED RESOURCES
-[List the specific resources that failed this check]
+[List the specific AWS resources that failed this check]
 
 ## 3. TERRAFORM FIX CODE
 [Provide complete, working, copy-paste ready Terraform code to resolve this violation]
@@ -59,7 +53,7 @@ Focus on actionable fixes with production-ready Terraform code."""
         response = bedrock.invoke_model(
             modelId=model_id,
             body=json.dumps({
-                "system": [{"text": "You are a CMMC (Cybersecurity Maturity Model Certification) compliance expert specializing in infrastructure security and Terraform. Your role is to analyze security violations, explain CMMC requirements, and provide actionable Terraform code fixes."}],
+                "system": [{"text": "You are a NIST 800-53 compliance expert specializing in AWS security and Terraform. Your role is to analyze security violations, explain NIST 800-53 requirements, and provide actionable Terraform code fixes."}],
                 "messages": [{"role": "user", "content": [{"text": prompt}]}],
                 "inferenceConfig": {
                     "max_new_tokens": max_tokens,
@@ -95,25 +89,28 @@ def send_notification(summary, details):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python ai-analyzer.py <checkov-output.json>")
+        print("Usage: python ai-analyzer.py <prowler-output.json>")
         sys.exit(1)
     
     results_file = sys.argv[1]
     
     try:
         with open(results_file, 'r') as f:
-            checkov_results = json.load(f)
+            prowler_results = json.load(f)
     except Exception as e:
         print(f"Error reading results: {e}")
         sys.exit(1)
     
-    failed_checks = checkov_results.get('results', {}).get('failed_checks', [])
-    passed_checks = checkov_results.get('results', {}).get('passed_checks', [])
+    # Prowler format: list of findings
+    all_findings = prowler_results if isinstance(prowler_results, list) else []
+    
+    failed_checks = [f for f in all_findings if f.get('Status') == 'FAIL']
+    passed_checks = [f for f in all_findings if f.get('Status') == 'PASS']
     
     total_checks = len(failed_checks) + len(passed_checks)
     
     print(f"\n{'='*70}")
-    print(f"CMMC COMPLIANCE SCAN RESULTS")
+    print(f"NIST 800-53 COMPLIANCE SCAN RESULTS")
     print(f"{'='*70}")
     print(f"Total Checks: {total_checks}")
     print(f"✓ Passed: {len(passed_checks)}")
@@ -121,27 +118,27 @@ def main():
     print(f"{'='*70}\n")
     
     if len(failed_checks) == 0:
-        print("✓ All CMMC compliance checks passed!")
+        print("✓ All NIST 800-53 compliance checks passed!")
         print("Deployment is allowed to proceed.\n")
         
-        summary = f"✅ CMMC Compliance: All {total_checks} checks passed!"
-        details = f"""CMMC COMPLIANCE SCAN - SUCCESS
+        summary = f"✅ NIST 800-53 Compliance: All {total_checks} checks passed!"
+        details = f"""NIST 800-53 COMPLIANCE SCAN - SUCCESS
 
 Total Checks Run: {total_checks}
 Passed: {len(passed_checks)}
 Failed: 0
 
 Status: DEPLOYMENT APPROVED
-All CMMC compliance requirements met.
+All NIST 800-53 compliance requirements met.
 """
         send_notification(summary, details)
         sys.exit(0)
     
-    print(f"❌ {len(failed_checks)} CMMC violation(s) detected\n")
+    print(f"❌ {len(failed_checks)} NIST 800-53 violation(s) detected\n")
     print("Analyzing violations with Nova Pro AI...\n")
     
     report_lines = []
-    report_lines.append("CMMC COMPLIANCE VIOLATIONS REPORT")
+    report_lines.append("NIST 800-53 COMPLIANCE VIOLATIONS REPORT")
     report_lines.append("=" * 70)
     report_lines.append(f"Total Violations: {len(failed_checks)}\n")
     
@@ -184,7 +181,7 @@ All CMMC compliance requirements met.
         print(f"Warning: Failed to save report to S3: {e}")
     
     # Send notification with full content (SNS supports up to 256KB)
-    summary = f"❌ CMMC: {len(failed_checks)} violation(s) - AI fixes provided"
+    summary = f"❌ NIST 800-53: {len(failed_checks)} violation(s) - AI fixes provided"
     notification_message = f"""{report_content}
 
 ---
@@ -195,7 +192,7 @@ Full report also available in S3: s3://{os.environ.get('ARTIFACT_BUCKET', 'N/A')
     print(f"\n{'='*70}")
     print("PIPELINE STATUS: FAILED")
     print(f"{'='*70}")
-    print(f"\n❌ Deployment BLOCKED due to {len(failed_checks)} CMMC violation(s)")
+    print(f"\n❌ Deployment BLOCKED due to {len(failed_checks)} NIST 800-53 violation(s)")
     print("Check email for AI-powered fix suggestions.\n")
     
     sys.exit(1)
