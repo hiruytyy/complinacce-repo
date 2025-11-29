@@ -87,6 +87,19 @@ def main():
     if len(failed_checks) == 0:
         print("✓ All CMMC compliance checks passed!")
         print("Deployment is allowed to proceed.\n")
+        
+        # Send success notification
+        summary = f"✅ CMMC Compliance: All {total_checks} checks passed!"
+        details = f"""CMMC COMPLIANCE SCAN - SUCCESS
+
+Total Checks Run: {total_checks}
+Passed: {len(passed_checks)}
+Failed: 0
+
+Status: DEPLOYMENT APPROVED
+All CMMC compliance requirements met.
+"""
+        send_notification(summary, details)
         sys.exit(0)
     
     # Process failures with AI
