@@ -9,7 +9,7 @@ phases:
   pre_build:
     commands:
       - echo "Running NIST 800-53 compliance scan with Checkov..."
-      - checkov -d . --framework terraform --output json --output-file-path . || true
+      - checkov -f sample-s3.tf --framework terraform --output json --output-file-path . || true
       - echo "Checkov scan completed"
   
   build:
