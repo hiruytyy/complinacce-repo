@@ -4,19 +4,18 @@ phases:
   install:
     commands:
       - echo "Installing dependencies..."
-      - pip install prowler boto3
+      - pip install checkov boto3
   
   pre_build:
     commands:
-      - echo "Running NIST 800-53 compliance scan with Prowler..."
-      - prowler aws --compliance nist_800_53_revision_5_aws --output-formats json-ocsf --output-directory . || true
-      - find . -name "*.ocsf.json" -type f
-      - echo "Prowler scan completed"
+      - echo "Running NIST 800-53 compliance scan with Checkov..."
+      - checkov -d . --framework terraform --output json --output-file-path . || true
+      - echo "Checkov scan completed"
   
   build:
     commands:
       - echo "Analyzing results with AI..."
-      - python ai-analyzer.py $(find . -name "*.ocsf.json" -type f | head -1)
+      - python ai-analyzer.py results_json.json
       - |
         if [ $? -ne 0 ]; then
           echo "❌ NIST 800-53 compliance scan FAILED - Pipeline blocked"
@@ -26,6 +25,6 @@ phases:
 
 artifacts:
   files:
-    - "**/*.ocsf.json"
+    - results_json.json
     - compliance-report.txt
   name: compliance-scan-results

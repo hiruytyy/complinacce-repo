@@ -4,7 +4,7 @@ import sys
 import boto3
 import os
 
-def analyze_with_ai(finding):
+def analyze_with_ai(failure):
     """Send violation to Bedrock for AI analysis"""
     bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
     
@@ -12,26 +12,20 @@ def analyze_with_ai(finding):
     max_tokens = int(os.environ.get('BEDROCK_MAX_TOKENS', '1500'))
     temperature = float(os.environ.get('BEDROCK_TEMPERATURE', '0.3'))
     
-    # Extract OCSF fields
-    metadata = finding.get('metadata', {})
-    finding_info = finding.get('finding_info', {})
-    resources = finding.get('resources', [{}])[0]
-    cloud = finding.get('cloud', {})
-    
-    check_id = metadata.get('product', {}).get('feature', {}).get('uid', 'Unknown')
-    check_title = finding.get('message', 'Unknown')
-    resource_uid = resources.get('uid', 'Unknown')
-    region = cloud.get('region', 'N/A')
-    severity = finding.get('severity', 'Unknown')
+    check_id = failure.get('check_id', 'Unknown')
+    check_name = failure.get('check_name', 'Unknown')
+    resource = failure.get('resource', 'Unknown')
+    file_path = failure.get('file_path', 'Unknown')
+    guideline = failure.get('guideline', 'N/A')
     
     prompt = f"""Analyze this AWS security violation and provide NIST 800-53 compliant fixes.
 
 VIOLATION DETAILS:
 - Check ID: {check_id}
-- Check: {check_title}
-- Resource: {resource_uid}
-- Region: {region}
-- Severity: {severity}
+- Check: {check_name}
+- Resource: {resource}
+- File: {file_path}
+- Guideline: {guideline}
 
 PROVIDE YOUR RESPONSE IN THIS EXACT FORMAT:
 
@@ -63,7 +57,7 @@ Focus on actionable fixes with production-ready Terraform code."""
         return result['output']['message']['content'][0]['text']
     except Exception as e:
         print(f"Warning: AI analysis failed: {e}")
-        return f"Check failed: {check_title}"
+        return f"Check failed: {check_name}"
 
 def send_notification(summary, details):
     """Send SNS notification"""
@@ -93,16 +87,13 @@ def main():
     
     try:
         with open(results_file, 'r') as f:
-            prowler_results = json.load(f)
+            checkov_results = json.load(f)
     except Exception as e:
         print(f"Error reading results: {e}")
         sys.exit(1)
     
-    # OCSF format: findings array
-    all_findings = prowler_results.get('findings', []) if isinstance(prowler_results, dict) else []
-    
-    failed_checks = [f for f in all_findings if f.get('status_id') == 2]  # OCSF: 2 = FAIL
-    passed_checks = [f for f in all_findings if f.get('status_id') == 1]  # OCSF: 1 = PASS
+    failed_checks = checkov_results.get('results', {}).get('failed_checks', [])
+    passed_checks = checkov_results.get('results', {}).get('passed_checks', [])
     
     total_checks = len(failed_checks) + len(passed_checks)
     
@@ -144,13 +135,14 @@ All NIST 800-53 compliance requirements met.
     report_lines.append("")
     
     for idx, finding in enumerate(failed_checks, 1):
-        resources = finding.get('resources', [{}])[0]
-        check_msg = finding.get('message', 'Unknown')
-        resource_uid = resources.get('uid', 'Unknown')
+        resource = finding.get('resource', 'Unknown')
+        check_name = finding.get('check_name', 'Unknown')
+        file_path = finding.get('file_path', 'Unknown')
         
         print(f"Violation {idx}/{len(failed_checks)}:")
-        print(f"  Resource: {resource_uid}")
-        print(f"  Check: {check_msg}")
+        print(f"  Resource: {resource}")
+        print(f"  Check: {check_name}")
+        print(f"  File: {file_path}")
         
         ai_analysis = analyze_with_ai(finding)
         
@@ -160,8 +152,9 @@ All NIST 800-53 compliance requirements met.
         report_lines.append(f"\n{'='*70}")
         report_lines.append(f"VIOLATION {idx}/{len(failed_checks)}")
         report_lines.append(f"{'='*70}")
-        report_lines.append(f"Resource: {resource_uid}")
-        report_lines.append(f"Check: {check_msg}\n")
+        report_lines.append(f"Resource: {resource}")
+        report_lines.append(f"File: {file_path}")
+        report_lines.append(f"Check: {check_name}\n")
         report_lines.append(ai_analysis)
         report_lines.append("")
     
