@@ -10,18 +10,17 @@ phases:
     commands:
       - echo "Running NIST 800-53 compliance scan with Checkov..."
       - checkov -f sample-s3.tf --framework terraform --output json --output-file-path . || true
+      - |
+        if [ ! -f results_json.json ]; then
+          echo "❌ Checkov failed to generate results"
+          exit 1
+        fi
       - echo "Checkov scan completed"
   
   build:
     commands:
       - echo "Analyzing results with AI..."
       - python ai-analyzer.py results_json.json
-      - |
-        if [ $? -ne 0 ]; then
-          echo "❌ NIST 800-53 compliance scan FAILED - Pipeline blocked"
-          exit 1
-        fi
-      - echo "✓ All NIST 800-53 checks passed - Deployment allowed"
 
 artifacts:
   files:

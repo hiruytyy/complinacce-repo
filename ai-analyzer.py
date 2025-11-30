@@ -3,10 +3,12 @@ import json
 import sys
 import boto3
 import os
+import time
+from botocore.exceptions import ClientError
 
-def analyze_with_ai(failure):
-    """Send violation to Bedrock for AI analysis"""
-    bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
+def analyze_with_ai(failure, retry_count=3):
+    """Send violation to Bedrock for AI analysis with retry logic"""
+    bedrock = boto3.client('bedrock-runtime', region_name=os.environ.get('AWS_REGION', 'us-east-1'))
     
     model_id = os.environ.get('BEDROCK_MODEL_ID', 'amazon.nova-pro-v1:0')
     max_tokens = int(os.environ.get('BEDROCK_MAX_TOKENS', '1500'))
@@ -40,39 +42,51 @@ PROVIDE YOUR RESPONSE IN THIS EXACT FORMAT:
 
 Focus on actionable fixes with production-ready Terraform code."""
 
-    try:
-        response = bedrock.invoke_model(
-            modelId=model_id,
-            body=json.dumps({
-                "system": [{"text": "You are a NIST 800-53 compliance expert specializing in AWS security and Terraform."}],
-                "messages": [{"role": "user", "content": [{"text": prompt}]}],
-                "inferenceConfig": {
-                    "max_new_tokens": max_tokens,
-                    "temperature": temperature
-                }
-            })
-        )
-        
-        result = json.loads(response['body'].read())
-        return result['output']['message']['content'][0]['text']
-    except Exception as e:
-        print(f"Warning: AI analysis failed: {e}")
-        return f"Check failed: {check_name}"
+    for attempt in range(retry_count):
+        try:
+            response = bedrock.invoke_model(
+                modelId=model_id,
+                body=json.dumps({
+                    "system": [{"text": "You are a NIST 800-53 compliance expert specializing in AWS security and Terraform."}],
+                    "messages": [{"role": "user", "content": [{"text": prompt}]}],
+                    "inferenceConfig": {
+                        "max_new_tokens": max_tokens,
+                        "temperature": temperature
+                    }
+                })
+            )
+            
+            result = json.loads(response['body'].read())
+            return result['output']['message']['content'][0]['text']
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'ThrottlingException' and attempt < retry_count - 1:
+                wait_time = (2 ** attempt) + 1
+                print(f"  Throttled, retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"  Warning: AI analysis failed: {e}")
+                return f"Check failed: {check_name}\nGuideline: {guideline}"
+        except Exception as e:
+            print(f"  Warning: AI analysis failed: {e}")
+            return f"Check failed: {check_name}\nGuideline: {guideline}"
+    
+    return f"Check failed: {check_name}\nGuideline: {guideline}"
 
 def send_notification(summary, details):
-    """Send SNS notification"""
+    """Send SNS notification with retry logic"""
+    region = os.environ.get('AWS_REGION', 'us-east-1')
+    sns = boto3.client('sns', region_name=region)
+    topic_arn = os.environ.get('SNS_TOPIC_ARN')
+    
+    if not topic_arn:
+        print("Warning: SNS_TOPIC_ARN not set, skipping notification")
+        return
+    
     try:
-        sns = boto3.client('sns', region_name='us-east-1')
-        topic_arn = os.environ.get('SNS_TOPIC_ARN')
-        
-        if not topic_arn:
-            print("Warning: SNS_TOPIC_ARN not set, skipping notification")
-            return
-            
         sns.publish(
             TopicArn=topic_arn,
             Subject=summary[:100],
-            Message=details[:262000]  # SNS max is 256KB
+            Message=details[:262000]
         )
         print(f"✓ Notification sent to SNS")
     except Exception as e:
@@ -80,14 +94,21 @@ def send_notification(summary, details):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python ai-analyzer.py <prowler-output.json>")
+        print("Usage: python ai-analyzer.py <checkov-results.json>")
         sys.exit(1)
     
     results_file = sys.argv[1]
     
+    if not os.path.exists(results_file):
+        print(f"Error: Results file not found: {results_file}")
+        sys.exit(1)
+    
     try:
         with open(results_file, 'r') as f:
             checkov_results = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON in results file: {e}")
+        sys.exit(1)
     except Exception as e:
         print(f"Error reading results: {e}")
         sys.exit(1)
@@ -164,10 +185,12 @@ All NIST 800-53 compliance requirements met.
         f.write(report_content)
     
     # Save full report to S3
-    try:
-        s3 = boto3.client('s3', region_name='us-east-1')
-        bucket = os.environ.get('ARTIFACT_BUCKET')
-        if bucket:
+    region = os.environ.get('AWS_REGION', 'us-east-1')
+    bucket = os.environ.get('ARTIFACT_BUCKET')
+    
+    if bucket:
+        try:
+            s3 = boto3.client('s3', region_name=region)
             s3.put_object(
                 Bucket=bucket,
                 Key='compliance-reports/latest-report.txt',
@@ -175,8 +198,8 @@ All NIST 800-53 compliance requirements met.
                 ContentType='text/plain'
             )
             print(f"✓ Full report saved to S3: s3://{bucket}/compliance-reports/latest-report.txt")
-    except Exception as e:
-        print(f"Warning: Failed to save report to S3: {e}")
+        except Exception as e:
+            print(f"Warning: Failed to save report to S3: {e}")
     
     # Send notification with full content (SNS supports up to 256KB)
     summary = f"❌ NIST 800-53 Compliance: {len(failed_checks)} violation(s) detected"
