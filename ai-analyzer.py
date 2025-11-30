@@ -135,29 +135,35 @@ All NIST 800-53 compliance requirements met.
     print("Analyzing violations with Nova Pro AI...\n")
     
     report_lines = []
+    report_lines.append("="*70)
     report_lines.append("NIST 800-53 COMPLIANCE VIOLATIONS REPORT")
-    report_lines.append("=" * 70)
-    report_lines.append(f"Total Violations: {len(failed_checks)}\n")
+    report_lines.append("="*70)
+    report_lines.append(f"Total Checks: {total_checks}")
+    report_lines.append(f"Passed: {len(passed_checks)}")
+    report_lines.append(f"Failed: {len(failed_checks)}")
+    report_lines.append("")
     
     for idx, finding in enumerate(failed_checks, 1):
-        metadata = finding.get('metadata', {})
         resources = finding.get('resources', [{}])[0]
+        check_msg = finding.get('message', 'Unknown')
+        resource_uid = resources.get('uid', 'Unknown')
         
         print(f"Violation {idx}/{len(failed_checks)}:")
-        print(f"  Resource: {resources.get('uid', 'Unknown')}")
-        print(f"  Check: {finding.get('message', 'Unknown')}")
+        print(f"  Resource: {resource_uid}")
+        print(f"  Check: {check_msg}")
         
-        # Get AI analysis with fix suggestions
         ai_analysis = analyze_with_ai(finding)
         
         print(f"\n{ai_analysis}\n")
         print("-" * 70 + "\n")
         
-        report_lines.append(f"\nVIOLATION {idx}:")
-        report_lines.append(f"Resource: {resources.get('uid', 'Unknown')}")
-        report_lines.append(f"Check: {finding.get('message', 'Unknown')}")
-        report_lines.append(f"\n{ai_analysis}")
-        report_lines.append("-" * 70)
+        report_lines.append(f"\n{'='*70}")
+        report_lines.append(f"VIOLATION {idx}/{len(failed_checks)}")
+        report_lines.append(f"{'='*70}")
+        report_lines.append(f"Resource: {resource_uid}")
+        report_lines.append(f"Check: {check_msg}\n")
+        report_lines.append(ai_analysis)
+        report_lines.append("")
     
     # Save report
     report_content = "\n".join(report_lines)
@@ -180,13 +186,8 @@ All NIST 800-53 compliance requirements met.
         print(f"Warning: Failed to save report to S3: {e}")
     
     # Send notification with full content (SNS supports up to 256KB)
-    summary = f"❌ NIST 800-53: {len(failed_checks)} violation(s) - AI fixes provided"
-    notification_message = f"""{report_content}
-
----
-Full report also available in S3: s3://{os.environ.get('ARTIFACT_BUCKET', 'N/A')}/compliance-reports/latest-report.txt
-"""
-    send_notification(summary, notification_message[:262000])  # SNS limit is 256KB
+    summary = f"❌ NIST 800-53 Compliance: {len(failed_checks)} violation(s) detected"
+    send_notification(summary, report_content)
     
     print(f"\n{'='*70}")
     print("PIPELINE STATUS: FAILED")
