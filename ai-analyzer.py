@@ -4,7 +4,7 @@ import sys
 import boto3
 import os
 
-def analyze_with_ai(failure):
+def analyze_with_ai(finding):
     """Send violation to Bedrock for AI analysis"""
     bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
     
@@ -12,29 +12,26 @@ def analyze_with_ai(failure):
     max_tokens = int(os.environ.get('BEDROCK_MAX_TOKENS', '1500'))
     temperature = float(os.environ.get('BEDROCK_TEMPERATURE', '0.3'))
     
-    # Extract Prowler fields
-    check_id = failure.get('CheckID', 'Unknown')
-    check_title = failure.get('CheckTitle', 'Unknown')
-    resource = failure.get('ResourceId', 'Unknown')
-    region = failure.get('Region', 'N/A')
-    severity = failure.get('Severity', 'UNKNOWN')
-    description = failure.get('Description', 'N/A')
-    risk = failure.get('Risk', 'N/A')
-    remediation = failure.get('Remediation', {})
-    compliance = failure.get('Compliance', {})
+    # Extract OCSF fields
+    metadata = finding.get('metadata', {})
+    finding_info = finding.get('finding_info', {})
+    resources = finding.get('resources', [{}])[0]
+    cloud = finding.get('cloud', {})
+    
+    check_id = metadata.get('product', {}).get('feature', {}).get('uid', 'Unknown')
+    check_title = finding.get('message', 'Unknown')
+    resource_uid = resources.get('uid', 'Unknown')
+    region = cloud.get('region', 'N/A')
+    severity = finding.get('severity', 'Unknown')
     
     prompt = f"""Analyze this AWS security violation and provide NIST 800-53 compliant fixes.
 
 VIOLATION DETAILS:
 - Check ID: {check_id}
 - Check: {check_title}
-- Description: {description}
-- Resource: {resource}
+- Resource: {resource_uid}
 - Region: {region}
 - Severity: {severity}
-- Risk: {risk}
-- NIST 800-53 Controls: {compliance.get('NIST-800-53', 'N/A')}
-- Remediation: {remediation.get('Recommendation', {}).get('Text', 'N/A')}
 
 PROVIDE YOUR RESPONSE IN THIS EXACT FORMAT:
 
@@ -53,7 +50,7 @@ Focus on actionable fixes with production-ready Terraform code."""
         response = bedrock.invoke_model(
             modelId=model_id,
             body=json.dumps({
-                "system": [{"text": "You are a NIST 800-53 compliance expert specializing in AWS security and Terraform. Your role is to analyze security violations, explain NIST 800-53 requirements, and provide actionable Terraform code fixes."}],
+                "system": [{"text": "You are a NIST 800-53 compliance expert specializing in AWS security and Terraform."}],
                 "messages": [{"role": "user", "content": [{"text": prompt}]}],
                 "inferenceConfig": {
                     "max_new_tokens": max_tokens,
@@ -66,7 +63,7 @@ Focus on actionable fixes with production-ready Terraform code."""
         return result['output']['message']['content'][0]['text']
     except Exception as e:
         print(f"Warning: AI analysis failed: {e}")
-        return f"Check failed: {check_name}"
+        return f"Check failed: {check_title}"
 
 def send_notification(summary, details):
     """Send SNS notification"""
@@ -101,11 +98,11 @@ def main():
         print(f"Error reading results: {e}")
         sys.exit(1)
     
-    # Prowler format: list of findings
-    all_findings = prowler_results if isinstance(prowler_results, list) else []
+    # OCSF format: findings array
+    all_findings = prowler_results.get('findings', []) if isinstance(prowler_results, dict) else []
     
-    failed_checks = [f for f in all_findings if f.get('Status') == 'FAIL']
-    passed_checks = [f for f in all_findings if f.get('Status') == 'PASS']
+    failed_checks = [f for f in all_findings if f.get('status_id') == 2]  # OCSF: 2 = FAIL
+    passed_checks = [f for f in all_findings if f.get('status_id') == 1]  # OCSF: 1 = PASS
     
     total_checks = len(failed_checks) + len(passed_checks)
     
@@ -142,21 +139,23 @@ All NIST 800-53 compliance requirements met.
     report_lines.append("=" * 70)
     report_lines.append(f"Total Violations: {len(failed_checks)}\n")
     
-    for idx, failure in enumerate(failed_checks, 1):
+    for idx, finding in enumerate(failed_checks, 1):
+        metadata = finding.get('metadata', {})
+        resources = finding.get('resources', [{}])[0]
+        
         print(f"Violation {idx}/{len(failed_checks)}:")
-        print(f"  Resource: {failure.get('resource', 'Unknown')}")
-        print(f"  Check: {failure.get('check_name', 'Unknown')}")
-        print(f"  File: {failure.get('file_path', 'Unknown')}")
+        print(f"  Resource: {resources.get('uid', 'Unknown')}")
+        print(f"  Check: {finding.get('message', 'Unknown')}")
         
         # Get AI analysis with fix suggestions
-        ai_analysis = analyze_with_ai(failure)
+        ai_analysis = analyze_with_ai(finding)
         
         print(f"\n{ai_analysis}\n")
         print("-" * 70 + "\n")
         
         report_lines.append(f"\nVIOLATION {idx}:")
-        report_lines.append(f"Resource: {failure.get('resource', 'Unknown')}")
-        report_lines.append(f"File: {failure.get('file_path', 'Unknown')}")
+        report_lines.append(f"Resource: {resources.get('uid', 'Unknown')}")
+        report_lines.append(f"Check: {finding.get('message', 'Unknown')}")
         report_lines.append(f"\n{ai_analysis}")
         report_lines.append("-" * 70)
     

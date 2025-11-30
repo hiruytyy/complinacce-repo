@@ -9,14 +9,14 @@ phases:
   pre_build:
     commands:
       - echo "Running NIST 800-53 compliance scan with Prowler..."
-      - prowler aws --compliance nist_800_53_revision_5_aws --output-formats json --output-directory ./prowler-output || true
-      - ls -la prowler-output/
+      - prowler aws --compliance nist_800_53_revision_5_aws --output-formats json-ocsf --output-directory . || true
+      - find . -name "*.ocsf.json" -type f
       - echo "Prowler scan completed"
   
   build:
     commands:
       - echo "Analyzing results with AI..."
-      - python ai-analyzer.py prowler-output/*.json
+      - python ai-analyzer.py $(find . -name "*.ocsf.json" -type f | head -1)
       - |
         if [ $? -ne 0 ]; then
           echo "❌ NIST 800-53 compliance scan FAILED - Pipeline blocked"
@@ -26,6 +26,6 @@ phases:
 
 artifacts:
   files:
-    - prowler-output/*.json
+    - "**/*.ocsf.json"
     - compliance-report.txt
   name: compliance-scan-results
